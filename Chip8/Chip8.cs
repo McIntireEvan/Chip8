@@ -1,6 +1,8 @@
 ﻿using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
+using System;
+using System.IO;
 
 namespace Chip8
 {
@@ -8,12 +10,28 @@ namespace Chip8
     {
         GraphicsDeviceManager graphics;
         SpriteBatch spriteBatch;
+        char[] memory;
 
         public Chip8()
             : base()
         {
             graphics = new GraphicsDeviceManager(this);
             Content.RootDirectory = "Content";
+            memory = new char[4096];
+            LoadFile("pong.c8");
+        }
+
+        private void LoadFile(string file) 
+        {
+            using (Stream reader = File.OpenRead(file))
+            {
+                int offset = 0;
+                while(reader.Position != reader.Length)
+                {
+                    memory[0x200 + offset] = (char)(reader.ReadByte() & 0xFF);
+                    offset++;
+                }
+            }
         }
 
         protected override void Initialize()
