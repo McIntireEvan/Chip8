@@ -2,32 +2,33 @@
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using System;
-using System.Collections.Generic;
 using System.IO;
 
 namespace Chip8
 {
     public class Chip8 : Game
     {
-        GraphicsDeviceManager graphics;
-        SpriteBatch spriteBatch;
-        Texture2D pixel;
+        private GraphicsDeviceManager graphics;
+        private SpriteBatch spriteBatch;
+        private Texture2D pixel;
 
-        ushort[] memory;
-        ushort counter;
+        private ushort[] memory;
+        private ushort[] registers; //Vx
+        
+        private ushort counter;
+        private ushort addressPointer; //I
 
-        ushort[] registers; //Vx
-        ushort addressPointer; //I
+        private ushort[] stack;
+        private ushort stackPointer;
 
-        ushort[] stack;
-        ushort stackPointer;
+        private byte[,] display;
+        private byte[] keys;
+        private int[] keyBuffer;
 
-        byte[,] display;
+        private ushort delay;
+        private ushort soundDelay;
 
-        ushort delay;
-        ushort soundDelay;
-
-        ushort[] font;
+        private ushort[] font;
 
         public Chip8()
             : base()
@@ -35,6 +36,7 @@ namespace Chip8
             graphics = new GraphicsDeviceManager(this);
             graphics.PreferredBackBufferWidth = 1024;
             graphics.PreferredBackBufferHeight = 512;
+
             Content.RootDirectory = "Content";
             memory = new ushort[4096];
             counter = 0x200;
@@ -42,7 +44,7 @@ namespace Chip8
             registers = new ushort[16];
             addressPointer = (char)0x0;
 
-            stack = new ushort[12];
+            stack = new ushort[16];
             stackPointer = 0;
 
             display = new byte[64, 32];
@@ -50,23 +52,26 @@ namespace Chip8
             delay = 0;
             soundDelay = 0;
 
-            font = new ushort[]{ 
+            keys = new byte[16];
+
+
+            font = new ushort[]{
                 0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
-                0x20, 0x60, 0x20, 0x20, 0x70, // 1
-                0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
-                0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
-                0x90, 0x90, 0xF0, 0x10, 0x10, // 4
-                0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
-                0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
-                0xF0, 0x10, 0x20, 0x40, 0x40, // 7
-                0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
-                0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
-                0xF0, 0x90, 0xF0, 0x90, 0x90, // A
-                0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
-                0xF0, 0x80, 0x80, 0x80, 0xF0, // C
-                0xE0, 0x90, 0x90, 0x90, 0xE0, // D
-                0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
-                0xF0, 0x80, 0xF0, 0x80, 0x80  // F
+			    0x20, 0x60, 0x20, 0x20, 0x70, // 1
+			    0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+			    0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+			    0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+			    0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+		        0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+			    0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+			    0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+			    0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+			    0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+			    0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+			    0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+			    0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+			    0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+			    0xF0, 0x80, 0xF0, 0x80, 0x80  // F
             };
 
             for (int i = 0; i < font.Length; i++)
@@ -97,12 +102,7 @@ namespace Chip8
         {
             spriteBatch = new SpriteBatch(GraphicsDevice);
             pixel = Content.Load<Texture2D>("pixel");
-            LoadFile("pong.c8");
-        }
-
-        protected override void UnloadContent()
-        {
-
+            LoadFile("tetris.c8");
         }
 
         protected override void Update(GameTime gameTime)
@@ -119,7 +119,7 @@ namespace Chip8
             //The second part ORs the second half of the opcode on, leaving us with 0xXXXX
             ushort opcode = (ushort)(memory[counter] << 8 | memory[counter + 1]);
 
-            Console.WriteLine(counter + "::" + (opcode & 0xFFFF).ToString("x"));
+            //Console.WriteLine(counter + "::" + (opcode & 0xFFFF).ToString("x"));
             switch (opcode & 0xF000)
             {
                 case 0x0000:
@@ -260,9 +260,8 @@ namespace Chip8
                                 }
                             case 0x0006:
                                 {
-                                    ushort bit = (ushort)(registers[x] & 0x1);
                                     registers[x] = (ushort)(registers[x] >> 1);
-                                    registers[0xF] = bit;
+                                    registers[0xF] = (ushort)(registers[x] & 0x1);
                                     counter += 2;
                                     break;
                                 }
@@ -357,7 +356,7 @@ namespace Chip8
                             case 0x00A1:
                                 {
                                     //TODO: Check if key up
-                                    counter+=4;
+                                    counter += 4;
                                     break;
                                 }
                         }
@@ -425,7 +424,7 @@ namespace Chip8
                             case 0x0055:
                                 {
                                     int x = opcode & 0x0F00 >> 8;
-                                    for (int i = 0; i < x; i++)
+                                    for (int i = 0; i <= x; i++)
                                     {
                                         memory[addressPointer + i] = registers[i];
                                     }
@@ -436,7 +435,7 @@ namespace Chip8
                             case 0x0065:
                                 {
                                     int x = opcode & 0x0F00 >> 8;
-                                    for (int i = 0; i < x; i++)
+                                    for (int i = 0; i <= x; i++)
                                     {
                                         registers[i] = memory[addressPointer + i];
                                     }
